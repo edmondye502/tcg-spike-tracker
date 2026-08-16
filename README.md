@@ -129,6 +129,12 @@ reserved slots.
 - **No sales volume exists in this data.** Nothing indicates whether ten
   copies sold or zero. The low-vs-market gap and the low-to-high spread are
   the available proxies.
+- **Prices are not condition specific.** tcgcsv aggregates every condition:
+  `lowPrice` is "the lowest listed price of a card sans condition", and
+  `marketPrice` "will roughly center around Near Mint or Lightly Played
+  listings, but not always". Near Mint pricing requires SKU-level access,
+  which means your own TCGplayer API credentials. Alerts label low prices
+  "any cond." rather than implying an NM copy is available at that price.
 - **tcgcsv etiquette.** One person's Patreon-funded mirror. It requires a
   named User-Agent, asks for ~100 ms between requests, and updates once a
   day — there's no reason to poll more often. Its CORS policy also blocks

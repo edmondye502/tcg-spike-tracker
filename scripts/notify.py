@@ -56,14 +56,15 @@ def flags_for(alert: dict) -> list[str]:
         flags.append("🔺 new high")
     if alert["streak"] >= 3:
         flags.append(f"📈 {alert['streak']}d climb")
-    # The cheapest listing not following the market up is the most actionable
-    # signal available: copies may still be sitting there underpriced. The
-    # inverse — cheapest listing above market — means you can't buy at market
-    # at all right now, which is worth knowing before you plan a trip.
+    # The cheapest listing not following the market up suggests copies may
+    # still be sitting there underpriced; the inverse means you can't buy at
+    # market at all right now. Both are labelled "any cond." because tcgcsv's
+    # low price is explicitly the lowest listing regardless of condition —
+    # the cheap copy behind it may be played.
     if alert["low_state"] == "cheap":
-        flags.append(f"💰 copies from ${alert['low']:,.2f}")
+        flags.append(f"💰 listings from ${alert['low']:,.2f} (any cond.)")
     elif alert["low_state"] == "above":
-        flags.append(f"⚠️ nothing listed under ${alert['low']:,.2f}")
+        flags.append(f"⚠️ nothing under ${alert['low']:,.2f} (any cond.)")
     return flags
 
 

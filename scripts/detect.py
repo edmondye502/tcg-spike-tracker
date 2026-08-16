@@ -53,29 +53,72 @@ def net_per_copy(price: float) -> float:
     return round(price * (1 - MARKETPLACE_FEE_RATE) - SHIPPING_COST, 2)
 
 
-def ebay_query(name: str, number: str) -> str:
-    """Build a search string that actually returns listings.
+GAME_TERMS = {"pokemon": "Pokemon", "onepiece": "One Piece"}
 
-    eBay ANDs every keyword, so extra words cost you results. Long
-    parenthetical set descriptors ("Premium Card Collection -BANDAI CARD GAMES
-    Fest. 23-24 Edition-") are noise no seller types, while short ones
-    ("Alternate Art") are how listings are titled. Parentheses themselves are
-    dropped because eBay reads them as OR syntax.
+# Words TCGplayer puts in product names that sellers don't put in listing
+# titles. Dropping them keeps the search specific without over-narrowing —
+# eBay ANDs every keyword, so each extra word can cost you real results.
+# "English" is here because English listings rarely say so; "Japanese" is not,
+# because Japanese printings are almost always labelled.
+DESCRIPTOR_NOISE = {
+    "a", "and", "card", "cards", "collection", "edition", "english", "for",
+    "games", "of", "pack", "packs", "series", "set", "sets", "the", "version",
+}
+
+# How many distinguishing words to carry over from a product name's
+# parentheticals. Enough to separate reprints that share a collector number,
+# few enough to still return listings.
+MAX_DESCRIPTOR_WORDS = 3
+
+
+def ebay_query(name: str, number: str, game: str = "") -> str:
+    """Build a search string specific enough to land on the right printing.
+
+    Collector numbers get reused across printings — One Piece especially, where
+    a promo and its base-set original share a number. So the distinguishing
+    words in a name's parentheticals ("1st Anniversary", "Alternate Art") are
+    kept rather than discarded; without them a search for the anniversary Sanji
+    returns every ordinary OP01-013 instead.
     """
-    query = re.sub(r"\s*\([^)]{20,}\)", "", name)
-    query = query.replace("(", " ").replace(")", " ")
-    query = re.sub(r"\s+-\s+", " ", query)
-    query = re.sub(r"\s+", " ", query).strip()
-    # The collector number is the most discriminating token there is, so make
-    # sure it's present even when the product name doesn't carry it.
-    if number and number.lower() not in query.lower():
-        query = f"{query} {number}"
-    return query
+    descriptors = re.findall(r"\(([^)]*)\)", name)
+    base = re.sub(r"\s*\([^)]*\)", " ", name)
+    # Trailing "- 223/197" duplicates the collector number we re-add below.
+    base = re.sub(r"\s+-\s+[\w./-]+\s*$", "", base)
+    base = re.sub(r"\s+", " ", base).strip()
+
+    words: list[str] = []
+    for descriptor in descriptors:
+        # A parenthetical that is just the collector number adds nothing.
+        if number and descriptor.strip().lower() == number.lower():
+            continue
+        # Split on whitespace and slashes only — hyphens are load-bearing
+        # inside tokens like "e-League" and "OP01-013", and stripping them
+        # from the edges handles "-BANDAI" and "Edition-" just as well.
+        for raw in re.split(r"[\s/]+", descriptor):
+            word = raw.strip(".,'\"!?-–—").strip()
+            if len(word) < 2 or word.isdigit():
+                continue
+            if word.lower() in DESCRIPTOR_NOISE:
+                continue
+            if number and word.lower() == number.lower():
+                continue
+            if word.lower() not in {w.lower() for w in words}:
+                words.append(word)
+
+    parts = [GAME_TERMS.get(game, ""), base]
+    if number and number.lower() not in base.lower():
+        parts.append(number)
+
+    # "Monkey.D.Luffy (One Piece Film Red)" would otherwise repeat the game
+    # name back at itself; a duplicated keyword just wastes a slot.
+    already = {w.lower() for p in parts for w in p.split()}
+    parts.extend([w for w in words if w.lower() not in already][:MAX_DESCRIPTOR_WORDS])
+    return re.sub(r"\s+", " ", " ".join(p for p in parts if p)).strip()
 
 
-def ebay_links(name: str, number: str) -> tuple[str, str]:
+def ebay_links(name: str, number: str, game: str = "") -> tuple[str, str]:
     """(active listings cheapest first, recent sold comps)."""
-    encoded = quote_plus(ebay_query(name, number))
+    encoded = quote_plus(ebay_query(name, number, game))
     return (
         f"https://www.ebay.com/sch/i.html?_nkw={encoded}&_sop=15",
         f"https://www.ebay.com/sch/i.html?_nkw={encoded}&LH_Sold=1&LH_Complete=1&_sop=13",
@@ -213,7 +256,8 @@ def detect(target_date: str | None, rule_name: str = "loose") -> dict:
         if not card:
             continue
 
-        ebay_url, ebay_sold_url = ebay_links(card["name"], card["number"])
+        game = CATEGORIES.get(meta[key], "")
+        ebay_url, ebay_sold_url = ebay_links(card["name"], card["number"], game)
 
         low_today = low[key][index]
         low_today = round(low_today, 2) if low_today == low_today else None
@@ -242,7 +286,7 @@ def detect(target_date: str | None, rule_name: str = "loose") -> dict:
             {
                 "product_id": product_id,
                 "sub_type_name": sub_type,
-                "game": CATEGORIES.get(meta[key], str(meta[key])),
+                "game": game or str(meta[key]),
                 "name": card["name"],
                 "set_name": card["set_name"],
                 "set_abbreviation": card["abbreviation"],
@@ -307,9 +351,9 @@ def main() -> None:
         if alert["streak"] >= 3:
             flags.append(f"{alert['streak']}d streak")
         if alert["low_state"] == "cheap":
-            flags.append(f"copies from ${alert['low']:.2f}")
+            flags.append(f"listings from ${alert['low']:.2f} any cond.")
         elif alert["low_state"] == "above":
-            flags.append(f"nothing under ${alert['low']:.2f}")
+            flags.append(f"nothing under ${alert['low']:.2f} any cond.")
         suffix = f"  [{', '.join(flags)}]" if flags else ""
         print(
             f"  {alert['game']:<9} ${alert['baseline']:>7.2f} -> ${alert['price']:>7.2f} "

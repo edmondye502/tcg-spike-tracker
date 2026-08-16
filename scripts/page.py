@@ -208,9 +208,11 @@ function flags(card) {
   if (card.repeat) out.push(['', 'already flagged ' + card.last_alerted]);
   if (card.new_high) out.push(['hot', 'new high']);
   if (card.streak >= 3) out.push(['hot', card.streak + 'd climb']);
-  if (card.low_state === "cheap") out.push(['hot', 'copies from ' + money(card.low)]);
-  else if (card.low_state === "above") out.push(['warn', 'nothing under ' + money(card.low)]);
-  else if (card.low !== null) out.push(['', 'low ' + money(card.low)]);
+  // "any cond." is not a hedge — tcgcsv's lowPrice is explicitly the lowest
+  // listing regardless of condition, so the cheapest copy may be played.
+  if (card.low_state === "cheap") out.push(['hot', 'listings from ' + money(card.low) + ' (any cond.)']);
+  else if (card.low_state === "above") out.push(['warn', 'nothing under ' + money(card.low) + ' (any cond.)']);
+  else if (card.low !== null) out.push(['', 'low ' + money(card.low) + ' (any cond.)']);
   return out.map(([cls, text]) => '<span class="flag ' + cls + '">' + text + '</span>').join("");
 }
 
@@ -365,15 +367,15 @@ bouncing back to a level it's already been.</dd>
 be a safer buy than a one-day pop — the sharpest single-day spikes are the
 ones that fall back hardest.</dd>
 
-<dt><span class="flag hot">copies from $85.00</span></dt>
-<dd><b>The one that matters.</b> The cheapest listing is 25% or more below
-market — copies are still sitting there underpriced.</dd>
+<dt><span class="flag hot">listings from $85.00 (any cond.)</span></dt>
+<dd>The cheapest listing is 25% or more below market. Promising — but read
+the condition note below before you act on it.</dd>
 
-<dt><span class="flag warn">nothing under $99.98</span></dt>
+<dt><span class="flag warn">nothing under $99.98 (any cond.)</span></dt>
 <dd>The cheapest listing is <i>above</i> market price, so you can't buy at
 market right now. Common on pricier cards, where nobody lists cheap.</dd>
 
-<dt><span class="flag">low $46.00</span></dt>
+<dt><span class="flag">low $46.00 (any cond.)</span></dt>
 <dd>Cheapest listing sits just under market. Neutral.</dd>
 </dl>
 
@@ -411,11 +413,24 @@ real. If nothing has sold, be careful.</dd>
 <p>eBay searches match on title text, so an unusual printing occasionally
 returns too much or too little. Trim a word or two if the results look off.</p>
 
+<h3>About condition — read this one</h3>
+<p><b>None of these prices are Near Mint specific.</b> The source aggregates
+every condition together: the low price is, in its own words, "the lowest
+listed price of a card sans condition," so the cheapest listing behind a
+<span class="flag hot">listings from …</span> tag can easily be a played
+copy. Market price "will roughly center around Near Mint or Lightly Played
+listings, but not always."</p>
+<p>Condition-level prices need SKU-level access, which this free source
+doesn't carry. In practice: treat the low price as a floor across all
+conditions, and check the actual listing or the sold comps before assuming
+you can buy or sell an NM copy at it. Only sets from the last four years are
+tracked, which helps — the worst condition mixing shows up in older cards.</p>
+
 <h3>Worth knowing</h3>
 <p>About 70% of cards don't reprice on a given day — TCGplayer only moves
 market price when something actually sells. And nothing in this data shows
-sales volume, so a move can happen on very few sales. The cheapest-listing
-tags are the best available read on whether a price is real.</p>
+sales volume, so a move can happen on very few sales. Sold comps on eBay are
+the fastest way to confirm a price is real.</p>
 
 </div>
 </details>"""
