@@ -50,7 +50,11 @@ jobs:
       - name: Render page
         run: python scripts/page.py
 
+      # Optional. With no DISCORD_WEBHOOK_URL secret set this step is skipped
+      # and the run is silent — the page is still updated and committed below.
+      # Add the secret later and it starts posting with no other changes.
       - name: Notify Discord
+        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           PAGE_URL: ${{ vars.PAGE_URL }}

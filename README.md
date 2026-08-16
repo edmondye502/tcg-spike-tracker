@@ -16,10 +16,11 @@ API keys.
 2. **Detect** — `detect.py` compares each card's market price against the
    median of the previous 7 snapshots and flags moves that clear a
    price-banded threshold.
-3. **Rank** — the day's candidates are cut to 10, with 4 slots held back for
-   cards under $10.
-4. **Deliver** — one Discord message with card art and links, plus a
-   self-contained HTML page with the full candidate list.
+3. **Rank** — the day's candidates are cut to 10 top picks, with 4 slots held
+   back for cards under $10. Cards flagged within the last 7 days stay off the
+   picks but remain in the list, marked, so nothing disappears between visits.
+4. **Deliver** — a self-contained HTML page with the full candidate list.
+   Discord is optional and off unless you set a webhook.
 
 ## Setup
 
@@ -32,17 +33,41 @@ python scripts/detect.py
 python scripts/page.py
 ```
 
-For Discord, create a webhook in the target channel's settings and put the URL
-in `.env` locally (see `.env.example`) and in the repo's Actions secrets as
-`DISCORD_WEBHOOK_URL`. Anyone holding that URL can post to the channel, so it
-never belongs in the repo. Preview without sending:
+Then open `docs/index.html` — it's a single self-contained file and works
+straight off the filesystem, no server needed.
+
+### Running it automatically
+
+The GitHub Actions workflow in `.github/workflows/daily.yml` does the same
+thing every day at 20:35 UTC (tcgcsv publishes around 20:00) and commits the
+updated page. Serve `docs/` from GitHub Pages to read it anywhere — note that
+Pages requires a public repo on the free plan.
+
+Committing on every run is also what keeps the schedule alive: GitHub disables
+scheduled workflows after 60 days of repository inactivity.
+
+Nothing is lost if it doesn't run. Because everything is rebuilt from tcgcsv's
+archive rather than live snapshots, a missed week is recovered in full with
+`backfill.py --days 10`. The archive goes back to 2024-02-08.
+
+### Discord (optional)
+
+Off by default. The workflow's notify step is skipped unless a
+`DISCORD_WEBHOOK_URL` secret exists, so adding one later is the only change
+needed to start posting.
+
+Create a webhook in the target channel's settings, then put the URL in `.env`
+locally (see `.env.example`) and in the repo's Actions secrets. Anyone holding
+that URL can post to your channel, so it never belongs in the repo. Preview
+without sending:
 
 ```bash
 python scripts/notify.py --dry-run
 ```
 
-Optionally set an Actions variable `PAGE_URL` pointing at your GitHub Pages
-site so each message links to the full list. Serve `docs/` from Pages.
+A webhook post doesn't ping anyone by default — whether it notifies is purely
+the channel's notification setting. Optionally set an Actions variable
+`PAGE_URL` so each message links to the full list.
 
 ## What the data actually supports
 

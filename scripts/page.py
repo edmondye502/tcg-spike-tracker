@@ -117,7 +117,8 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 16
     <button id="f-pokemon" aria-pressed="false">Pokémon</button>
     <button id="f-onepiece" aria-pressed="false">One Piece</button>
     <button id="f-cheap" aria-pressed="false">Under $10</button>
-    <button id="f-top" aria-pressed="false">Alerted only</button>
+    <button id="f-top" aria-pressed="false">Top picks</button>
+    <button id="f-new" aria-pressed="false">Hide repeats</button>
     <button id="sort">Sort: $ gain</button>
   </div>
 </header>
@@ -127,7 +128,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 16
 const DATA = __DATA__;
 const TOP = __TOP__;
 
-const state = { game: "all", cheap: false, topOnly: false, q: "", sort: "gain" };
+const state = { game: "all", cheap: false, topOnly: false, newOnly: false, q: "", sort: "gain" };
 const done = new Set(JSON.parse(localStorage.getItem("done") || "[]"));
 const money = n => "$" + n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const idOf = c => c.product_id + "|" + c.sub_type_name;
@@ -153,6 +154,7 @@ function spark(history) {
 
 function flags(card) {
   const out = [];
+  if (card.repeat) out.push(['', 'already flagged ' + card.last_alerted]);
   if (card.new_high) out.push(['hot', 'new high']);
   if (card.streak >= 3) out.push(['hot', card.streak + 'd climb']);
   if (card.low_state === "cheap") out.push(['hot', 'copies from ' + money(card.low)]);
@@ -167,6 +169,7 @@ function render() {
     if (state.game !== "all" && card.game !== state.game) return false;
     if (state.cheap && card.baseline >= 10) return false;
     if (state.topOnly && !TOP.includes(idOf(card))) return false;
+    if (state.newOnly && card.repeat) return false;
     if (needle) {
       const hay = (card.name + " " + card.set_name + " " + (card.set_abbreviation || "") + " " +
                    card.number + " " + (card.rarity || "")).toLowerCase();
@@ -229,6 +232,9 @@ document.getElementById("f-cheap").addEventListener("click", () => {
 document.getElementById("f-top").addEventListener("click", () => {
   state.topOnly = !state.topOnly; press("f-top", state.topOnly); render();
 });
+document.getElementById("f-new").addEventListener("click", () => {
+  state.newOnly = !state.newOnly; press("f-new", state.newOnly); render();
+});
 document.getElementById("sort").addEventListener("click", event => {
   state.sort = state.sort === "gain" ? "pct" : "gain";
   event.target.textContent = "Sort: " + (state.sort === "gain" ? "$ gain" : "% move");
@@ -253,9 +259,10 @@ def render(report: dict) -> str:
 
     headline = f"{len(candidates)} candidate{'s' if len(candidates) != 1 else ''}"
     subhead = (
-        f"{report['date']} · top {min(len(top_ids), DAILY_LIMIT)} alerted"
+        f"{report['date']} · {min(len(top_ids), DAILY_LIMIT)} top picks"
         + (f" · {mix}" if mix else "")
-        + (f" · {report['suppressed_count']} suppressed as repeats"
+        + (f" · {report['suppressed_count']} repeat"
+           f"{'s' if report['suppressed_count'] != 1 else ''} from earlier this week"
            if report.get("suppressed_count") else "")
     )
 

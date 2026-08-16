@@ -152,9 +152,13 @@ def detect(target_date: str | None, rule_name: str = "loose") -> dict:
 
         product_id, sub_type = key
         last_seen = history.get(key)
-        if last_seen and ordinals_for([last_seen])[0] > cutoff:
+        # A card mid-run trips the threshold for days on end. Keep it out of
+        # the ranked picks, but still list it: if you only check the page
+        # every few days, a card that spiked and then got suppressed would
+        # otherwise disappear before you ever laid eyes on it.
+        is_repeat = bool(last_seen and ordinals_for([last_seen])[0] > cutoff)
+        if is_repeat:
             suppressed += 1
-            continue
 
         card = catalog.get(product_id)
         if not card:
@@ -195,6 +199,8 @@ def detect(target_date: str | None, rule_name: str = "loose") -> dict:
                 "rarity": card["rarity"],
                 "image_url": card["image_url"],
                 "url": card["url"],
+                "repeat": is_repeat,
+                "last_alerted": last_seen if is_repeat else None,
                 "baseline": round(baseline, 2),
                 "price": round(today, 2),
                 "gain": round(today - baseline, 2),
@@ -209,7 +215,7 @@ def detect(target_date: str | None, rule_name: str = "loose") -> dict:
             }
         )
 
-    top = rank(candidates)
+    top = rank([c for c in candidates if not c["repeat"]])
     return {
         "date": day,
         "rules": rule_name,
