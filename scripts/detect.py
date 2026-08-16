@@ -12,8 +12,10 @@ binder find against a big-money move rather than throwing one away up front.
 import argparse
 import csv
 import json
+import re
 import sys
 from pathlib import Path
+from urllib.parse import quote_plus
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from analysis import (  # noqa: E402
@@ -51,6 +53,35 @@ def net_per_copy(price: float) -> float:
     return round(price * (1 - MARKETPLACE_FEE_RATE) - SHIPPING_COST, 2)
 
 
+def ebay_query(name: str, number: str) -> str:
+    """Build a search string that actually returns listings.
+
+    eBay ANDs every keyword, so extra words cost you results. Long
+    parenthetical set descriptors ("Premium Card Collection -BANDAI CARD GAMES
+    Fest. 23-24 Edition-") are noise no seller types, while short ones
+    ("Alternate Art") are how listings are titled. Parentheses themselves are
+    dropped because eBay reads them as OR syntax.
+    """
+    query = re.sub(r"\s*\([^)]{20,}\)", "", name)
+    query = query.replace("(", " ").replace(")", " ")
+    query = re.sub(r"\s+-\s+", " ", query)
+    query = re.sub(r"\s+", " ", query).strip()
+    # The collector number is the most discriminating token there is, so make
+    # sure it's present even when the product name doesn't carry it.
+    if number and number.lower() not in query.lower():
+        query = f"{query} {number}"
+    return query
+
+
+def ebay_links(name: str, number: str) -> tuple[str, str]:
+    """(active listings cheapest first, recent sold comps)."""
+    encoded = quote_plus(ebay_query(name, number))
+    return (
+        f"https://www.ebay.com/sch/i.html?_nkw={encoded}&_sop=15",
+        f"https://www.ebay.com/sch/i.html?_nkw={encoded}&LH_Sold=1&LH_Complete=1&_sop=13",
+    )
+
+
 def load_catalog() -> dict:
     connection = connect()
     rows = connection.execute(
@@ -65,14 +96,21 @@ def load_catalog() -> dict:
     return {row["product_id"]: dict(row) for row in rows}
 
 
-def load_history() -> dict:
-    """Map (product_id, sub_type) -> most recent alert date."""
+def load_history(before: str) -> dict:
+    """Map (product_id, sub_type) -> most recent alert date strictly before `before`.
+
+    Excluding the target day matters: re-running a day (an Actions retry, or a
+    manual re-run) would otherwise read its own alerts back and suppress every
+    pick it just made.
+    """
     if not HISTORY.exists():
         return {}
     seen: dict = {}
     with HISTORY.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
+            if row["date"] >= before:
+                continue
             key = (int(row["product_id"]), row["sub_type_name"])
             if key not in seen or row["date"] > seen[key]:
                 seen[key] = row["date"]
@@ -80,11 +118,22 @@ def load_history() -> dict:
 
 
 def append_history(date: str, alerts: list[dict]) -> None:
-    exists = HISTORY.exists()
-    with HISTORY.open("a", newline="", encoding="utf-8") as handle:
+    """Record the day's picks, replacing any existing rows for that date.
+
+    Rewriting rather than appending keeps a re-run from stacking duplicate
+    rows for the same day.
+    """
+    kept: list[list] = []
+    if HISTORY.exists():
+        with HISTORY.open(newline="", encoding="utf-8") as handle:
+            reader = csv.reader(handle)
+            next(reader, None)  # header
+            kept = [row for row in reader if row and row[0] != date]
+
+    with HISTORY.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        if not exists:
-            writer.writerow(HISTORY_COLUMNS)
+        writer.writerow(HISTORY_COLUMNS)
+        writer.writerows(kept)
         for alert in alerts:
             writer.writerow(
                 [date, alert["product_id"], alert["sub_type_name"], alert["price"]]
@@ -135,7 +184,7 @@ def detect(target_date: str | None, rule_name: str = "loose") -> dict:
         )
 
     catalog = load_catalog()
-    history = load_history()
+    history = load_history(before=day)
     cutoff = ordinals[index] - SUPPRESS_DAYS
 
     candidates = []
@@ -163,6 +212,8 @@ def detect(target_date: str | None, rule_name: str = "loose") -> dict:
         card = catalog.get(product_id)
         if not card:
             continue
+
+        ebay_url, ebay_sold_url = ebay_links(card["name"], card["number"])
 
         low_today = low[key][index]
         low_today = round(low_today, 2) if low_today == low_today else None
@@ -199,6 +250,8 @@ def detect(target_date: str | None, rule_name: str = "loose") -> dict:
                 "rarity": card["rarity"],
                 "image_url": card["image_url"],
                 "url": card["url"],
+                "ebay_url": ebay_url,
+                "ebay_sold_url": ebay_sold_url,
                 "repeat": is_repeat,
                 "last_alerted": last_seen if is_repeat else None,
                 "baseline": round(baseline, 2),
