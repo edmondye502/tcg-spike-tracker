@@ -1,0 +1,10 @@
+# Derived artifact — rebuilt from data/prices/*.csv.gz by scripts/db.py
+data/spike.db
+
+# Secrets (Discord webhook etc.)
+.env
+
+__pycache__/
+*.pyc
+.venv/
+venv/
